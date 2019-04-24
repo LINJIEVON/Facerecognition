@@ -207,11 +207,9 @@ class FaceCore(object):
             for i in range(samplingtimes):
                 self.dataset['encodings'].append(knownEncodings[i])
                 self.dataset['ids'].append(ids[i])
-            FileOption().WriteEncodings(self.dataset)
         else:
-            data = {"encodings": knownEncodings, "ids": ids}
-            FileOption().WriteEncodings(data)
-
+            self.dataset = {"encodings": knownEncodings, "ids": ids}
+        
         faceInfo = FaceInfo(faceId = face_id, name = name, info = info)
         self.AddNewFace(faceInfo)
         
@@ -293,6 +291,7 @@ class FaceCore(object):
             
             if 0 > index:
                 break
+            
             index =  int(index * samplingtimes)
             
             distance0 = face_recognition.face_distance(np.array(self.dataset['encodings'][index]), np.array(encoding))
@@ -301,9 +300,7 @@ class FaceCore(object):
            
             distance = (distance0[0] + distance1[0] + distance2[0]) / samplingtimes
             result = (distance, self.dataset['ids'][index])
-           
             self.recogResults.append(result)
-            #print(index)
             #print(threading.currentThread().ident)
        
         
@@ -338,6 +335,9 @@ class FaceCore(object):
         foption.WriteFaceInfo(faceInfo)
         #print(faceInfo.info)
         
+        #write to encodings file
+        FileOption().WriteEncodings(self.dataset)
+        
         #Synchronization variable value
         self.knownsCount += 1
         self.tempKnownsCount = self.knownsCount
@@ -345,9 +345,9 @@ class FaceCore(object):
     def IsIdExist(self, label): # label type is str
         if self.dataset is not None:
             for i,item in enumerate(self.dataset['ids']):
+                #print(str(label) + ' ' + str(item))
                 if str(label) == str(item):
                     return i
-                return -1
         return -1
     
     
@@ -358,10 +358,10 @@ class FaceCore(object):
             index = self.IsIdExist(label)
             if index >= 0:
                 for i in range(samplingtimes):
-                    del self.dataset['encodings'][index + i]
-                    del self.dataset['ids'][index + i]
-                    self.knownsCount -= 1
+                    del self.dataset['encodings'][index]
+                    del self.dataset['ids'][index]
                     
+                self.knownsCount -= 1
                 self.tempKnownsCount = self.knownsCount
                 foption.WriteEncodings(self.dataset)
                 

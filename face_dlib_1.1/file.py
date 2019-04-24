@@ -9,12 +9,11 @@ Created on Wed Apr 10 21:37:55 2019
 import os, stat
 import hashlib
 import pickle
-from ruamel import yaml 
 
 faceImagePath = 'dataset/'
-faceInfoPath = 'faceinfo/faceinfo.yaml'
+faceInfoPath = 'faceinfo/faceinfo.pickle'
 encodingsPath = 'encodings/encodings.pickle'
-permissionPath = 'permission.yaml'
+permissionPath = 'permission.pickle'
 defaultPermission = '202cb962ac59075b964b07152d234b70' #123 md5 twice ''
 
 class FileOption:
@@ -29,9 +28,15 @@ class FileOption:
         # Storage face info
         if False == os.path.isfile(self.faceInfoPath):
             os.mknod( self.faceInfoPath ,stat.S_IRWXU)
+            with open(self.faceInfoPath, "wb") as f:
+                f.write(pickle.dumps({}))
+            
         #Storage trained faces
         if False == os.path.isfile(self.encodingsPath):
             os.mknod( self.encodingsPath ,stat.S_IRWXU)
+            with open(self.encodingsPath, "wb") as f:
+                f.write(pickle.dumps({}))
+            
         #storage face images
         if False == os.path.isdir(self.faceImagePath):
             os.mkdir( self.faceImagePath ,stat.S_IRWXU)
@@ -41,7 +46,7 @@ class FileOption:
             os.mknod( self.permissionPath ,stat.S_IRWXU)
             self.WriteDefaultPermisssion()
             
-    
+    # Not used
     def GetTrainFiles(self, list_names):
         count = 0
         listfiles = os.listdir(self.trainFilePath)
@@ -61,64 +66,51 @@ class FileOption:
         return count
     
     def GetFaceInfo(self, label):
-        with open( self.faceInfoPath , 'r') as f: 
-            content = yaml.load(f, Loader=yaml.RoundTripLoader)
-            if None == content:
-                return None
-            faceId = str(label)
-            if faceId in content:
-                name = content[faceId]['name']
-                info = content[faceId]['info']
-                faceInfo = FaceInfo(faceId, name, info)
-                return faceInfo
-            else:
-                return None
+        dicInfos = pickle.loads(open( self.faceInfoPath, "rb").read())
+        if not dicInfos:
+            return None
+        faceId = str(label)
+        if faceId in dicInfos:
+            name = dicInfos[faceId]['name']
+            info = dicInfos[faceId]['info']
+            faceInfo = FaceInfo(faceId, name, info)
+            return faceInfo
+        else:
+            return None
             
     def GetFaceListInfo(self, listinfo):
-        with open( self.faceInfoPath , 'r') as f: 
-            content = yaml.load(f, Loader=yaml.RoundTripLoader)
-            if None == content:
-                return None
-            for key,value in content.items():
-                faceId = key
-                name = value['name']
-                info = value['info']
-                faceInfo = FaceInfo(faceId, name, info)
-                listinfo.append(faceInfo)
+        dicInfos = pickle.loads(open( self.faceInfoPath, "rb").read())
+        if not dicInfos:
+            return None
+        for key,value in dicInfos.items():
+            faceId = key
+            name = value['name']
+            info = value['info']
+            faceInfo = FaceInfo(faceId, name, info)
+            listinfo.append(faceInfo)
     
-    
-    def WriteFaceInfo(self, faceInfo):        
-        faceInfo = { str(faceInfo.faceId) : \
-                   { 'name' : str(faceInfo.name), 'info' : str(faceInfo.info) } }
-        with open( self.faceInfoPath) as f:
-            content = yaml.load(f, Loader=yaml.RoundTripLoader)
-            content.update(faceInfo)
-        with open( self.faceInfoPath, 'w') as f: 
-            yaml.dump(content, f, Dumper=yaml.RoundTripDumper)
+    def WriteFaceInfo(self, faceInfo):
+        dicInfos = pickle.loads(open( self.faceInfoPath, "rb").read())
+        dicInfos[ str(faceInfo.faceId) ] = { 'name' : str(faceInfo.name), 'info' : str(faceInfo.info) } #Change if it exist,instead add
+        #dicInfos.setdefault(key,value)     #if it exist,it does not change ,instead add
+        with open(self.faceInfoPath, "wb") as f:
+            f.write(pickle.dumps(dicInfos))
     
     
     def DeleteFaceInfos(self, labels):
-        with open( self.faceInfoPath) as f:
-            content = yaml.load(f, Loader=yaml.RoundTripLoader)
-            for label in labels:
-                faceId = str(label)
-                if faceId in content:
-                    del content[faceId]
-                else:
-                    return
-        with open(self.faceInfoPath, 'w') as nf:
-            yaml.dump(content, nf, Dumper=yaml.RoundTripDumper)
+        dicInfos = pickle.loads(open( self.faceInfoPath, "rb").read())
+        for label in labels:
+            faceId = str(label)
+            if faceId in dicInfos:
+                del dicInfos[faceId]
+        with open(self.faceInfoPath, "wb") as f:
+            f.write(pickle.dumps(dicInfos))
     
     
     def LoadDataset(self):
-        dataset = None
-        if os.path.isfile(encodingsPath) is False:
-            print("\nError: "+encodingsPath+" not exist and creat it.")
-            os.mknod( encodingsPath ,stat.S_IRWXU)
-        elif os.path.getsize( encodingsPath ):
-            print('begin')
-            dataset = pickle.loads(open( encodingsPath, "rb").read())
-            print('end')
+        dataset = pickle.loads(open( encodingsPath, "rb").read())
+        if not dataset:
+            return None
         return dataset
         
     
@@ -145,9 +137,9 @@ class FileOption:
     
     
     def WriteDefaultPermisssion(self):
-        with open( self.permissionPath, 'w') as f:
-            content = { 'permission':defaultPermission }
-            yaml.dump(content, f, Dumper=yaml.RoundTripDumper)
+        content = { 'permission':defaultPermission }
+        with open(self.permissionPath, "wb") as f:
+            f.write(pickle.dumps(content))
             
             
             
@@ -166,18 +158,20 @@ class FileOption:
         new = new.encode(encoding='utf-8')
         md5.update(new)
         md5_new = md5.hexdigest()
-        with open( self.permissionPath, 'w') as f:
-            content = { 'permission': md5_new}
-            yaml.dump(content, f, Dumper=yaml.RoundTripDumper)
+        
+        content = { 'permission': md5_new}
+        with open(self.permissionPath, "wb") as f:
+            f.write(pickle.dumps(content))
             
         return 0
+    
         
     def GetPermission(self):
-        with open( self.permissionPath , 'r') as f: 
-            content = yaml.load(f, Loader=yaml.RoundTripLoader)
-            if None == content:
-                return None
-            return content['permission']
+        content = pickle.loads(open( self.permissionPath, "rb").read())
+        if not content:
+            return None
+        return content['permission']
+    
     
     def VerifyPermission(self, permission):
         md5 = hashlib.md5()
