@@ -10,8 +10,11 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from PIL import Image, ImageTk
-from core import FaceCore
+from core import FaceCore, MyThread
 from file import FileOption
+
+
+threadCount = 0
 
 class MainWin:
     def __init__(self):
@@ -25,6 +28,7 @@ class MainWin:
         win.title('Face-Recognition')
         win.geometry('640x650')
         win.minsize(640,650)
+        win.protocol('WM_DELETE_WINDOW',    lambda:self.CallBack(win))
     
         frametop = tk.Frame( win, padx = 1, pady = 2, bg = 'snow')
         frametop.pack(fill = tk.X)
@@ -42,8 +46,13 @@ class MainWin:
         btmenu = tk.Button( frametop, text = 'menu', command = self.MenuShow, bg = 'steelblue')
         btmenu.pack(side = tk.LEFT)
         
+# =============================================================================
+#         btrecg = tk.Button( frametop, text = 'recognition', bg = 'steelblue'\
+#                                 , command = lambda:self.FaceRecognition(win) )
+#         btrecg.pack(side = tk.RIGHT)
+# =============================================================================
         btrecg = tk.Button( frametop, text = 'recognition', bg = 'steelblue'\
-                                , command = lambda:self.FaceRecognition(win) )
+                        , command = lambda:MyThread(self.FaceRecognition, win).start())
         btrecg.pack(side = tk.RIGHT)
         
         # Video control
@@ -80,7 +89,13 @@ class MainWin:
              win.destroy()
              return -1
         self.ShowFrame()
-        win.mainloop()
+        
+        win.mainloop()     
+        
+    def CallBack(self, win):
+        if 0 == threadCount:
+            win.destroy()
+        
         
     def ConsoleShow(self, event, win):
         key = event.keysym
@@ -96,7 +111,7 @@ class MainWin:
         if 'm'== key:
             self.MenuShow()
         if 'Escape' == key: #Esc
-            win.destroy()
+            self.CallBack(win)
         
     def ConsoleClear(self, event = None): #if no 'None',will get one error,when running
         self.outtext.config(state = tk.NORMAL)
@@ -125,7 +140,8 @@ class MainWin:
         return lambda event, fun=fun, kwds=kwds: fun(event, **kwds)
         
     def ShowFrame(self):
-        img = self.facecore.DetectionToShow()
+        img, faces = self.facecore.Detection()
+        self.facecore.DrawRectangle(img, faces)
         img = Image.fromarray( img ) #.resize((100, 100))
         
         #1.This should be a PhotoImage or BitmapImage, or a compatible object (such as the PIL PhotoImage). 
@@ -136,14 +152,15 @@ class MainWin:
         
         
     def FaceRecognition(self, win):
+        global threadCount
+        threadCount += 1
         dicResult= self.facecore.FaceRecognition()
         if len(dicResult) <= 0:
             messagebox.showerror(title = 'Error', message = self.facecore.errorMessage, parent = win)
         else:  
             string  = 'name: ' + dicResult['name'] + '\nconfidence: ' + dicResult['distance'] 
             messagebox.showinfo(title = 'Recognize thr result', message = string, parent = win)
-        
-        
+        threadCount -= 1
         
     def __del__(self):
         print('destroy object MainWin')
@@ -221,6 +238,7 @@ class MenuGui:
         self.topWin.title('Menu')
         self.topWin.geometry('600x500')
         self.topWin.minsize(500,400)
+        self.topWin.protocol('WM_DELETE_WINDOW',    lambda:self.CallBack(self.topWin))
         
         self.facecore.SetParentWidget(self.topWin)
         
@@ -336,8 +354,12 @@ class MenuGui:
         frame_2_2_base2.pack(side = tk.BOTTOM, fill = tk.X, pady = 5)
         button_f21 = tk.Button(frame_2_2_base2, text = 'Clear', command = self.ClearFaceInput)
         button_f21.pack(side = tk.RIGHT, padx = 2)
-        button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = self.CreateNewFace)
+        button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = lambda:MyThread(self.CreateNewFace).start() )
         button_f22.pack(side = tk.RIGHT, padx = 2)
+# =============================================================================
+#         button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = self.CreateNewFace)
+#         button_f22.pack(side = tk.RIGHT, padx = 2)
+# =============================================================================
               
         
         #-------------------------- frame_left2_3 (change permission)----------------------------
@@ -386,7 +408,9 @@ class MenuGui:
         button_f22.pack(side = tk.RIGHT, padx = 2)
         
            
-        
+    def CallBack(self, win):
+        if threadCount is 0:
+            win.destroy()
         
     def handlerAdaptor(self, fun, **kwds):
         return lambda event, fun=fun, kwds=kwds: fun(event, **kwds)
@@ -405,6 +429,8 @@ class MenuGui:
                 self.listFrames[i].pack_forget()
     
     def CreateNewFace(self, event = None):
+        global threadCount
+        threadCount += 1
         name = self.inputText1.get()
         if 0 == len(name):
             name = 'unspecified'
@@ -413,6 +439,7 @@ class MenuGui:
             note = 'null'
         faceInfo = self.facecore.TrainFromCamera(name, note)
         self.RefreshTable(faceInfo)
+        threadCount -= 1
         
     def ClearFaceInput(self):
         self.inputText1.delete(0, tk.END)

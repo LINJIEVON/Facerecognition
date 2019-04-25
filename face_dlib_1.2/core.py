@@ -5,7 +5,7 @@ Created on Tue Mar 26 19:54:04 2019
 
 @author: linjie
 """
-import os, stat
+import os, time
 import numpy as np
 import cv2
 import random
@@ -62,7 +62,11 @@ class FaceCore(object):
         self.tempKnownsCount = 0
         
         self.recogResults = []
+        
         self.errorMessage = ""
+        
+        self.capImages = None
+        self.capSwitch = False
     
     def FaceInit(self, console = None):
         
@@ -130,32 +134,19 @@ class FaceCore(object):
                 scaleFactor=1.1,
                 minNeighbors=5,
                 minSize=(int( self.minW ), int( self.minH )))
-
-        return rgb,faces   
+        if self.capSwitch and len(faces) > 0:
+            retvalue = self.capImages.Put(rgb, faces)
+            if retvalue < 0:
+                self.capSwitch = False
+        return rgb,faces  
     
-    def DetectionToShow(self):
-        if None == self.cam:
-            self.CvPrint('Error: camera is not open')
-            self.Message(2, 'Error', 'camera is not open')
-            return
-        #while True:
-        ret, img = self.cam.read()
-    
-        #img = cv2.flip(img, 0)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        faces = self.faceCascade.detectMultiScale(
-                gray,
-                scaleFactor=1.1,
-                minNeighbors=3,
-                minSize=(int( self.minW ), int( self.minH )))
-        
+ 
+    def DrawRectangle(self, img, faces):
         for(x,y,w,h) in faces:
             #cv2.imwrite("dataset/User." + str(1) + '.' + str(1) + ".jpg", gray[y:y+h,x:x+w])
             cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
-                
-        return img   
+    
+    
     
     def TrainFromCamera(self, name, info):
         if None == self.cam:
@@ -178,9 +169,16 @@ class FaceCore(object):
             retvalue = self.IsIdExist(str(face_id))
             if retvalue < 0:
                 break
+        
+        self.capSwitch = True
+        self.capImages = DetImages(samplingtimes)
+        while self.capSwitch:
+            time.sleep(0.2)
             
         while True:
-            rgb, faces = self.Detection()
+            rgb, faces = self.capImages.Get()
+            if faces is None:
+                break
             for(x,y,w,h) in faces:
                 # OpenCV returns bounding box coordinates in (x, y, w, h) order
                 # but we need them in (top, right, bottom, left) order, so we
@@ -196,8 +194,11 @@ class FaceCore(object):
             if count >= samplingtimes:
                 break
         
-        string = "\n [INFO] Training faces. It will take a few seconds. Wait ..."
-        
+        if 0 == len(faceSamples):
+            string = "\n [INFO] No faces deteched, Training faces failed!"
+            self.Message(0, 'info', string)
+            self.CvPrint(string)
+            
         for i,face in enumerate(faceSamples):
             # compute the facial embedding for the face
             encoding = face_recognition.face_encodings(face, [boxes[i]])
@@ -235,16 +236,22 @@ class FaceCore(object):
             self.errorMessage = 'No face model exist'
             self.CvPrint('Error: No face model exist')
             return {}
+        
+        self.capSwitch = True
+        self.capImages = DetImages(1)
+        
+        while self.capSwitch:
+            time.sleep(0.1)
             
-        while True:
-            rgb, faces = self.Detection()
-            encoding = None
-            for(x,y,w,h) in faces:
-                box = (y, x + w, y + h, x)
-                encoding = face_recognition.face_encodings(rgb, [box])
-                break
-            if encoding is not None:
-                break
+        encoding = None
+        rgb, faces = self.capImages.Get()
+        if faces is None:
+            self.errorMessage = 'No face deteched'
+            self.CvPrint('Error: No face deteched')
+            return {}
+        for(x,y,w,h) in faces:
+            box = (y, x + w, y + h, x)
+            encoding = face_recognition.face_encodings(rgb, [box])
             
         threads = []
         #start =time.time()
@@ -366,14 +373,14 @@ class FaceCore(object):
                 foption.WriteEncodings(self.dataset)
                 
         self.CvPrint('Deleted ' +str( len(labels) )+ ' faces success!')
-            
-            
+                   
     def SetParentWidget(self, parent):
         del self.parentWidget
         self.parentWidget = None
         self.parentWidget = parent
         
-        
+    
+   
         
     def __del__(self):
         print('destroy object CvCore')
@@ -418,7 +425,31 @@ class MyThread (threading.Thread):
             self.func(self.args[0])
         elif 2 == argNum:
             self.func(self.args[0], self.args[1])
+            
+                       
+class DetImages:
     
+    def __init__(self, size = 3):
+        self.size = size
+        self.detImages = []
+    
+    def Put(self, img, box):
+        if self.size > len(self.detImages):
+            self.detImages.append( (img,box) )
+            return 0
+        else:
+            return -1
+    
+    def Get(self):
+        if len(self.detImages) > 0: 
+            item = self.detImages.pop()
+            return item[0], item[1]
+        else:
+            return None, None
+    
+    def SetEmpty(self):
+        if len(self.detImages) > 0:
+            self.detImages.clear()
 
 
 
@@ -427,33 +458,6 @@ if __name__ == '__main__':
     pass
 
 
-# =============================================================================
-# while(True):
-#     
-#     img,gray,faces = detection()
-#     for(x,y,w,h) in faces:
-#         cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
-#     cv2.imshow('video', img)
-#     
-#     k = cv2.waitKey(10) & 0xff # Press 'ESC' for exiting video
-#     if k == 27:
-#         break
-#     elif k== 110:   # Press 'n'
-#         getDataAndTrain()
-#     elif k== 114:   # Press 'r'
-#         faceRecognition()
-#         
-# # Do a bit of cleanup
-# print("\n [INFO] Exiting Program and cleanup stuff")
-# cam.release()
-# cv2.destroyAllWindows()
-#         
-# =============================================================================
-
-#fs = cv2.FileStorage( testFile, cv2.FileStorage_READ | cv2.FileStorage_FORMAT_YAML | cv2.FileStorage_WRITE)# | cv2.FileStorage_FORMAT_YAML | cv2.FileStorage_APPEND)
-    
-        
-        
         
         
         
