@@ -1,7 +1,0 @@
-#####
-*
-*
-
-1.Managing data in the yaml file format feels inefficient when read, so now let's change management to pickle format
-2...
-
