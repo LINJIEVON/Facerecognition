@@ -160,7 +160,7 @@ class FaceCore(object):
         boxes = []
         
         string = "\n [INFO] Initializing face capture. Look the camera and wait ..."
-        self.Message(0, 'info', string)
+        #self.Message(0, 'info', string)
         self.CvPrint(string)
         
         while True:
@@ -202,12 +202,12 @@ class FaceCore(object):
             encoding = face_recognition.face_encodings(face, [boxes[i]])
             knownEncodings.append(encoding)
         
-        faceInfo = FaceInfo(faceId = str(faceId), name = name, info = info)
+        faceInfo = FaceInfo(faceId = faceId, name = name, info = info)
         self.AddNewFace(faceInfo, knownEncodings)
         
         # Print the numer of faces trained and end program
         string = "\n [INFO] 1 faces trained."
-        self.Message(0, 'info', string)
+        #self.Message(0, 'info', string)
         self.CvPrint(string)
         
         return faceId
@@ -333,7 +333,8 @@ class FaceCore(object):
         #print(faceInfo.info)
         
         #write to encodings file
-        FileOption().WriteEncodings(faceInfo.faceId, encodings)
+        ttuple = (faceInfo.faceId, encodings)
+        FileOption().WriteEncodings(ttuple)
         
         #Add new face to memoty
         datatuple = (faceInfo.faceId, encodings)

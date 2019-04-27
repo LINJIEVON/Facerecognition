@@ -81,8 +81,6 @@ class MainWin:
         
         win.bind('<Key>', self.handlerAdaptor( self.ConsoleShow, win = win))
         
-        FileOption().BuildPaths()
-        
         retvalue = self.facecore.FaceInit(console = self.outtext)
         if retvalue < 0:
              messagebox.showerror(title = 'Error', message = 'Camera not found !', parent = win)

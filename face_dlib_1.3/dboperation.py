@@ -11,6 +11,7 @@ import numpy as np
 import io
 import pickle
 
+permissionPath = 'permission.pickle'
 defaultPermission = '202cb962ac59075b964b07152d234b70' #123 md5 twice ''
 
 #databese
@@ -43,7 +44,7 @@ sqlite3.register_converter("array", convert_array)
 
 def DbConnect():
     global connect, cursor
-    connect = sqlite3.connect(database, detect_types=sqlite3.PARSE_DECLTYPES)
+    connect = sqlite3.connect(database, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread = False)
     with connect:
         cursor = connect.cursor()
         print('Open database successfully')
@@ -83,11 +84,12 @@ class FileOption:
     def __init__(self):
         self.conn = connect
         self.cur = cursor
+        self.permissionPath = permissionPath
         
     
     def LoadDataset(self):
         dataset = []
-        rdatas = self.cur.execute('select * from dataset')
+        rdatas = self.cur.execute('select * from faceencode')
         if not rdatas:
             return None
         for item in rdatas:
@@ -99,7 +101,7 @@ class FileOption:
     
     def WriteEncodings(self, datatuple):
         if self.cur is not None:
-            self.cur.execute('insert into faceencode (face_id,face_data) values (?,?)',(datatuple[0], datatuple[1]))
+            self.cur.execute('insert into faceencode (face_id,face_data) values (?,?)',(str(datatuple[0]), np.array(datatuple[1])))
             self.conn.commit()
         else:
             return
@@ -144,7 +146,7 @@ class FileOption:
     def WriteFaceInfo(self, faceInfo):
         if self.cur is not None:
             self.cur.execute('insert into faceinfo (face_id,face_name,note) values (?,?,?)'\
-                             ,(faceInfo.faceId, faceInfo.face_name, faceInfo.info))
+                             ,(faceInfo.faceId, faceInfo.name, faceInfo.info))
             self.conn.commit()
     
     
@@ -214,9 +216,10 @@ class FileOption:
 class FaceInfo:
     
     def __init__(self, faceId, name, info):
+        self.faceId = str(faceId)
         self.name = name
         self.info = info
-        self.faceId = faceId
+        
     
     def __del__(self):
         pass
