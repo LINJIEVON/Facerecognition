@@ -70,7 +70,7 @@ def CreateTable():
     except sqlite3.OperationalError:
             print('tabel faceencode has exist')
     try:
-        cursor.execute('create table faceinfo (face_id text, face_name text, note text)')
+        cursor.execute('create table faceinfo (face_id text, face_name text, face_identity text, note text)')
         connect.commit()
     except sqlite3.OperationalError:
             print('tabel faceinfo has exist')
@@ -88,23 +88,25 @@ class FileOption:
         
     
     def LoadDataset(self):
-        dataset = []
-        rdatas = self.cur.execute('select * from faceencode')
-        if not rdatas:
-            return None
-        for item in rdatas:
-           #print(type(item))
-           dataset.append(item)
-            
-        return dataset 
+        if self.cur is not None:
+            dataset = []
+            rdatas = self.cur.execute('select * from faceencode')
+            if not rdatas:
+                return None
+            for item in rdatas:
+               #print(type(item))
+               dataset.append(item)
+            return dataset 
+        return None
         
     
     def WriteEncodings(self, datatuple):
         if self.cur is not None:
             self.cur.execute('insert into faceencode (face_id,face_data) values (?,?)',(str(datatuple[0]), np.array(datatuple[1])))
             self.conn.commit()
+            return 0
         else:
-            return
+            return -101
     
     
     def DeleteEncoding(self, faceIds):
@@ -112,8 +114,9 @@ class FileOption:
             for faceId in faceIds:  
                 self.cur.execute('delete from faceencode where face_id=?', (faceId,))
                 self.conn.commit()
+            return 0
         else:
-            return 
+            return -101
 
             
             
@@ -122,32 +125,54 @@ class FileOption:
             rinfos = self.cur.execute('select * from faceInfo where face_id=?', (faceId,))
             for item in rinfos:
                 name = item[1]
-                info = item[2]
-                faceInfo = FaceInfo(faceId, name, info)            
+                identity = item[2]
+                info = item[3]
+                faceInfo = FaceInfo(faceId, name, identity, info)            
                 return faceInfo
             return None
         else:
             return None
 
             
-    def GetFaceListInfo(self, listinfo):
+    def GetFaceAllInfo(self, listinfo):
         if self.cur is not None:
             rinfos = self.cur.execute('select * from faceInfo')
             for item in rinfos:
                 faceId = item[0]
                 name = item[1]
-                info = item[2]
-                faceInfo = FaceInfo(faceId, name, info)
+                identity = item[2]
+                info = item[3]
+                faceInfo = FaceInfo(faceId, name,identity, info)
                 listinfo.append(faceInfo)
+        else:
+            return None
+        
+    def GetFaceListInfo(self, identity):
+        if self.cur is not None:
+            listinfo = []
+            arg = '%' + identity + '%' 
+            rinfos = self.cur.execute('select * from faceInfo where face_identity like ?', (arg,))
+            for item in rinfos:
+                faceId = item[0]
+                name = item[1]
+                identity = item[2]
+                info = item[3]
+                faceInfo = FaceInfo(faceId, name,identity, info)
+                listinfo.append(faceInfo)
+            return listinfo
         else:
             return None
         
     
     def WriteFaceInfo(self, faceInfo):
         if self.cur is not None:
-            self.cur.execute('insert into faceinfo (face_id,face_name,note) values (?,?,?)'\
-                             ,(faceInfo.faceId, faceInfo.name, faceInfo.info))
+            rinfos = self.cur.execute('select * from faceInfo where face_identity=?', (faceInfo.identity,))
+            if not rinfos:
+                return -102
+            self.cur.execute('insert into faceinfo (face_id,face_name,face_identity,note) values (?,?,?,?)'\
+                             ,(faceInfo.faceId, faceInfo.name, faceInfo.identity, faceInfo.info))
             self.conn.commit()
+            return 0
     
     
     def DeleteFaceInfos(self, faceIds):
@@ -156,7 +181,7 @@ class FileOption:
                 self.cur.execute('delete from faceinfo where face_id=?', (faceId,))
                 self.conn.commit()
         else:
-            return 
+            return -101
         
         
     def WriteDefaultPermisssion(self):
@@ -174,7 +199,7 @@ class FileOption:
         md5.update(old)
         md5_old = md5.hexdigest()
         if prep != md5_old:
-            return -1
+            return -103
         
         md5 = hashlib.md5()
         new = new.encode(encoding='utf-8')
@@ -205,7 +230,7 @@ class FileOption:
         if md5_per == prep:
             return 0
         else:
-            return -1
+            return -104
     
     
     def __del__(self):
@@ -215,28 +240,23 @@ class FileOption:
     
 class FaceInfo:
     
-    def __init__(self, faceId, name, info):
+    def __init__(self, faceId, name, identity, info):
         self.faceId = str(faceId)
         self.name = name
+        self.identity = str(identity)
         self.info = info
+    
+    def eToString(self):
+        string = '\nFaceid: ' + self.faceId +\
+                '\nName: ' + self.name +\
+                '\nIdentity: ' + self.identity +\
+                '\nInfo: ' + self.info  
+        return string
         
     
     def __del__(self):
         pass
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
 
 if __name__ == "__main__": 
     pass
