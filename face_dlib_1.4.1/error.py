@@ -16,7 +16,8 @@ class Error:
                 -201:'NO_CAMERA_DEVICE_FOUND',\
                 -202:'CAMERA_OPEN_FAILED',\
                 -203:'NO_FACE_DETECH',\
-                -204:'NO_FACE_MODEL'
+                -204:'NO_FACE_MODEL',\
+                -205:'EMPTY_RESULT_LIST'
                 }
     
     def GetError(self, errorNum):

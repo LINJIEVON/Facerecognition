@@ -132,6 +132,9 @@ class FileOption:
             return None
         else:
             return None
+        
+    def UnkownFaceInfo(self):
+        return FaceInfo('unkown', 'unkown', 'unkown', 'unkown')
 
             
     def GetFaceAllInfo(self, listinfo):

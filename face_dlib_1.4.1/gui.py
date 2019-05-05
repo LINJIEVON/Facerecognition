@@ -24,6 +24,7 @@ class MainWin:
         self.menuTextState = False
         self.facecore = FaceCore()
         self.image = None
+        self.isRuningRecognize = False
         
     def GuiShow(self):
         self.message = ''
@@ -110,7 +111,7 @@ class MainWin:
         self.outtext.config(state = tk.DISABLED)
         
         if 'r' == key:
-            self.FaceRecognition(win)
+            MyThread(self.FaceRecognition, win).start()
         if 'm'== key:
             self.MenuShow()
         if 'Escape' == key: #Esc
@@ -155,6 +156,9 @@ class MainWin:
         
         
     def FaceRecognition(self, win):
+        if self.isRuningRecognize:
+            return
+        self.isRuningRecognize = True
         global threadCount
         threadCount += 1
         dicResult = {} 
@@ -166,6 +170,7 @@ class MainWin:
                     + '\ndistance: ' + dicResult['distance'] 
             messagebox.showinfo(title = 'Recognize result', message = string, parent = win)
         threadCount -= 1
+        self.isRuningRecognize = False
         
     def __del__(self):
         print('destroy object MainWin')
@@ -240,6 +245,7 @@ class MenuGui:
         self.topWin = None
         self.facecore = None
         self.autoMessage = None
+        self.isTraning = False
         
     def GuiShow(self, master, facecore):
         
@@ -386,6 +392,10 @@ class MenuGui:
         frame_2_2_base2.pack(side = tk.BOTTOM, fill = tk.X, pady = 5)
         button_f21 = tk.Button(frame_2_2_base2, text = 'Clear', command = self.ClearFaceInput)
         button_f21.pack(side = tk.RIGHT, padx = 2)
+# =============================================================================
+# 
+#         button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = lambda:MyThread(self.CreateNewFaceTest).start() )
+# =============================================================================
         button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = lambda:MyThread(self.CreateNewFace).start() )
         button_f22.pack(side = tk.RIGHT, padx = 2)
 # =============================================================================
@@ -462,6 +472,9 @@ class MenuGui:
     
     
     def CreateNewFace(self, event = None):
+        if self.isTraning:
+            return
+        self.isTraning = True
         global threadCount
         threadCount += 1
         
@@ -488,6 +501,16 @@ class MenuGui:
             messagebox.showerror(title = Error().GetError(retvalue), message = 'Add new face failure!'\
                                 , parent = self.topWin)
         threadCount -= 1
+        self.isTraning = False
+    
+    def CreateNewFaceTest(self, event = None):
+        count = 2019001
+        for i in range(500):
+            count += i
+            print(count)
+            faceInfo  = FaceInfo('unspecified', 'linjie', str(count), 'test')
+            self.facecore.TrainFromCamera(faceInfo)
+            self.RefreshTable(faceInfo)
         
         
     def ClearFaceInput(self):

@@ -39,6 +39,8 @@ threadLock = threading.Lock()
 DevicePath0 = '/dev/video0'
 DevicePath1 = '/dev/video1'
 
+Unkown = 0.5
+
 #when run in raspberry open the annotation
 #Resolve conflicts between openblas and applications
 #opblas.set_num_threads(1)
@@ -53,13 +55,11 @@ class FaceCore(object):
         self.frame_height = frameHeight
            
         self.cam = None
-        self.parentWidget = None
         
         self.threadNum = 4
         
         self.dataset = None
         self.knownsCount = 0
-        self.tempKnownsCount = 0
         
         self.recogResults = []
         
@@ -91,7 +91,6 @@ class FaceCore(object):
         self.dataset = FileOption().LoadDataset()
         if self.dataset is not None: 
             self.knownsCount = len(self.dataset)
-            self.tempKnownsCount = self.knownsCount
         
         
         # Define min window size to be recognized as a face
@@ -211,11 +210,10 @@ class FaceCore(object):
             #self.Message(2, 'Error', 'camera is not open')
             return -202 
         
-        self.tempKnownsCount = self.knownsCount     # Refill the counter
         self.recogResults.clear()   #empty the result list
         
         #print(self.tempRecognizerCount)
-        if 0 >= self.tempKnownsCount:
+        if 0 >= self.knownsCount:
             self.errorMessage = 'No face model exist'
             self.CvPrint('Error: No face model exist')
             return -204
@@ -234,16 +232,26 @@ class FaceCore(object):
             encoding = face_recognition.face_encodings(rgb, [box])
             
         threads = []
-        #start =time.time()
+        
+        if self.knownsCount < 4*2:
+            self.threadNum = 1
+            taskNum = self.knownsCount
+        else:
+            taskNum = int(self.knownsCount / 4)
+            
         for i in range(self.threadNum):
-            thread = MyThread(self.Recognition, encoding)
+            start = i*taskNum
+            end = (i+1)*taskNum
+            if (i + 1) == self.threadNum and end < self.knownsCount:
+                end = self.knownsCount
+            thread = MyThread(self.Recognition, encoding, start, end)
             thread.start()
             threads.append(thread)
         
         for th in threads:
             th.join()
             
-        #end =time.time()
+            
         #print('Running time: %s Seconds'%(end-start))
          
         self.recogResults.sort(key = lambda k: k[0]) #sort by value
@@ -257,9 +265,11 @@ class FaceCore(object):
         
         label = final[1]
         distance = final[0]
-        
-        faceInfo = FileOption().GetFaceInfo(label)
-        string2 = faceInfo.eToString() + 'Distance: ' + str(distance)
+        if distance <= Unkown:
+            faceInfo = FileOption().GetFaceInfo(label)
+        else:
+            faceInfo = FileOption().UnkownFaceInfo()
+        string2 = faceInfo.eToString() + '\nDistance: ' + str(distance)
         self.CvPrint(string2)
         
         result.update({'faceinfo' : faceInfo, 'distance' : str(distance)}) 
@@ -269,17 +279,9 @@ class FaceCore(object):
         #cv2.putText(img, str(id), (x+5,y-5), font, 1, (255,255,255), 2)
         #cv2.putText(img, str(confidence), (x+5,y+h-5), font, 1, (255,255,0), 1)
             
-    def Recognition(self, encoding):
-        while True:
-            threadLock.acquire()
-            index = self.tempKnownsCount -1
-            self.tempKnownsCount -= 1
-            threadLock.release()
-            
-            if 0 > index:
-                break
-            
-            onedata = self.dataset[index]
+    def Recognition(self, encoding, start, end):
+        for i in range(start, end):
+            onedata = self.dataset[i]
             distance0 = face_recognition.face_distance(np.array(onedata[1][0]), np.array(encoding))
             distance1 = face_recognition.face_distance(np.array(onedata[1][1]), np.array(encoding))
             distance2 = face_recognition.face_distance(np.array(onedata[1][2]), np.array(encoding))
@@ -320,7 +322,6 @@ class FaceCore(object):
         
         #Synchronization variable value
         self.knownsCount += 1
-        self.tempKnownsCount = self.knownsCount
         
         return 0
     
@@ -343,7 +344,6 @@ class FaceCore(object):
                 del self.dataset[index]
                     
                 self.knownsCount -= 1
-                self.tempKnownsCount = self.knownsCount
                 
         self.CvPrint('Deleted ' +str( len(labels) )+ ' faces success!')
                    
@@ -372,6 +372,8 @@ class MyThread (threading.Thread):
             self.func(self.args[0])
         elif 2 == argNum:
             self.func(self.args[0], self.args[1])
+        elif 3 == argNum:
+            self.func(self.args[0], self.args[1], self.args[2])
             
                        
 class DetImages:
