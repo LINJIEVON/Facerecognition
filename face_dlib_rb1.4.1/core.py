@@ -12,10 +12,11 @@ import random
 import threading
 import tkinter as tk
 from tkinter import messagebox
-from dboperation import FileOption,FaceInfo
+from dboperation import FileOption
+import gui
 import face_recognition
 #when run in raspberry open the annotation
-#import opblas
+import opblas
 
 
 CV_CAP_PROP_FRAME_WIDTH = 3
@@ -38,9 +39,11 @@ threadLock = threading.Lock()
 DevicePath0 = '/dev/video0'
 DevicePath1 = '/dev/video1'
 
+Unkown = 0.5
+
 #when run in raspberry open the annotation
 #Resolve conflicts between openblas and applications
-#opblas.set_num_threads(1)
+opblas.set_num_threads(1)
 
 class FaceCore(object):
     
@@ -52,44 +55,34 @@ class FaceCore(object):
         self.frame_height = frameHeight
            
         self.cam = None
-        self.console = None
-        self.parentWidget = None
         
         self.threadNum = 4
         
         self.dataset = None
         self.knownsCount = 0
-        self.tempKnownsCount = 0
         
         self.recogResults = []
-        
-        self.errorMessage = ""
         
         self.capImages = None
         self.capSwitch = False
     
-    def FaceInit(self, console = None):
-        
-        self.console = console
-        
-        if None != self.cam:
-            return
-        if None == self.camera:
+    def FaceInit(self):
+
+        if self.camera is None:
             if os.path.exists(DevicePath0):
                 self.camera = 0
             elif os.path.exists(DevicePath1):
                 self.camera = 1
             else:
                 self.CvPrint('No Camera found')
-                return -1
+                return -201
                 
         
         self.cam = cv2.VideoCapture( self.camera )
-        
-        retval = self.cam.isOpened()
-        if retval != True:
+
+        if self.cam.isOpened() is False:
             self.CvPrint('Error: camera open failed!')
-            return -1
+            return -202
             
         self.cam.set( CV_CAP_PROP_FRAME_WIDTH, self.frame_width)     # set Width 
         self.cam.set( CV_CAP_PROP_FRAME_HEIGHT, self.frame_height)   # set Height
@@ -98,7 +91,6 @@ class FaceCore(object):
         self.dataset = FileOption().LoadDataset()
         if self.dataset is not None: 
             self.knownsCount = len(self.dataset)
-            self.tempKnownsCount = self.knownsCount
         
         
         # Define min window size to be recognized as a face
@@ -119,10 +111,6 @@ class FaceCore(object):
         return 0
     
     def Detection(self):
-        if None == self.cam:
-            self.CvPrint('Error: camera is not open')
-            self.Message(2, 'Error', 'camera is not open')
-            return
         ret, img = self.cam.read()
     
         #img = cv2.flip(img, 0)
@@ -148,18 +136,18 @@ class FaceCore(object):
     
     
     
-    def TrainFromCamera(self, name, info):
-        if None == self.cam:
+    def TrainFromCamera(self, faceInfo):
+        if self.cam.isOpened is False:
             self.CvPrint('Error: camera is not open')
-            self.Message(2, 'Error', 'camera is not open')
-            return
+            #self.Message(2, 'Error', 'camera is not open')
+            return -202 
         
         count = 0
         faceSamples=[]
         knownEncodings = []
         boxes = []
         
-        string = "\n [INFO] Initializing face capture. Look the camera and wait ..."
+        string = "\n [INFO] Initializing face capture."
         #self.Message(0, 'info', string)
         self.CvPrint(string)
         
@@ -192,41 +180,43 @@ class FaceCore(object):
             if count >= samplingtimes:
                 break
         
-        if 0 == len(faceSamples):
+        if len(faceSamples) is 0:
             string = "\n [INFO] No faces deteched, Training faces failed!"
-            self.Message(0, 'info', string)
+            #self.Message(0, 'info', string)
             self.CvPrint(string)
+            return -203
             
         for i,face in enumerate(faceSamples):
             # compute the facial embedding for the face
             encoding = face_recognition.face_encodings(face, [boxes[i]])
             knownEncodings.append(encoding)
         
-        faceInfo = FaceInfo(faceId = faceId, name = name, info = info)
-        self.AddNewFace(faceInfo, knownEncodings)
+        faceInfo.faceId = faceId
+        retvalue = self.AddNewFace(faceInfo, knownEncodings)
+        if retvalue < 0:
+            return retvalue
         
         # Print the numer of faces trained and end program
         string = "\n [INFO] 1 faces trained."
         #self.Message(0, 'info', string)
         self.CvPrint(string)
         
-        return faceId
+        return 0
         
 
-    def FaceRecognition(self):
-        if None == self.cam:
-            self.errorMessage = 'camera is not open'
+    def FaceRecognition(self, result):
+        if self.cam.isOpened is False:
             self.CvPrint('Error: camera is not open')
-            return {}
+            #self.Message(2, 'Error', 'camera is not open')
+            return -202 
         
-        self.tempKnownsCount = self.knownsCount     # Refill the counter
         self.recogResults.clear()   #empty the result list
         
         #print(self.tempRecognizerCount)
-        if 0 >= self.tempKnownsCount:
+        if 0 >= self.knownsCount:
             self.errorMessage = 'No face model exist'
             self.CvPrint('Error: No face model exist')
-            return {}
+            return -204
         
         self.capSwitch = True
         self.capImages = DetImages(1)
@@ -236,61 +226,62 @@ class FaceCore(object):
             
         encoding = None
         rgb, faces = self.capImages.Get()
-        if faces is None:
-            self.errorMessage = 'No face deteched'
-            self.CvPrint('Error: No face deteched')
-            return {}
+        
         for(x,y,w,h) in faces:
             box = (y, x + w, y + h, x)
             encoding = face_recognition.face_encodings(rgb, [box])
             
         threads = []
-        #start =time.time()
+        
+        if self.knownsCount < 4*2:
+            self.threadNum = 1
+            taskNum = self.knownsCount
+        else:
+            taskNum = int(self.knownsCount / 4)
+            
         for i in range(self.threadNum):
-            thread = MyThread(self.Recognition, encoding)
+            start = i*taskNum
+            end = (i+1)*taskNum
+            if (i + 1) == self.threadNum and end < self.knownsCount:
+                end = self.knownsCount
+            thread = MyThread(self.Recognition, encoding, start, end)
             thread.start()
             threads.append(thread)
         
         for th in threads:
             th.join()
             
-        #end =time.time()
+            
         #print('Running time: %s Seconds'%(end-start))
          
         self.recogResults.sort(key = lambda k: k[0]) #sort by value
         if len(self.recogResults) ==0:
-            string = 'Error: The recognizer return an empty list, Try again!'
+            string = 'Error: The recognizer return an empty list'
             self.CvPrint(string)
             self.errorMessage = string
-            return {}
+            return -205
         #print(self.recogResults)str(face_id)
         final = self.recogResults[0]
         
         label = final[1]
         distance = final[0]
-        
-        faceInfo = FileOption().GetFaceInfo(label)
-        
-        entity = Entity(faceInfo.faceId, faceInfo.name, faceInfo.info, distance)
-        string2 = '\nid: ' + faceInfo.faceId + entity.eToString()
+        if distance <= Unkown:
+            faceInfo = FileOption().GetFaceInfo(label)
+        else:
+            faceInfo = FileOption().UnkownFaceInfo()
+        string2 = faceInfo.eToString() + '\nDistance: ' + str(distance)
         self.CvPrint(string2)
-    
-        return {'name' : faceInfo.name, 'distance' : str(distance)}
+        
+        result.update({'faceinfo' : faceInfo, 'distance' : str(distance)}) 
+        
+        return 0
         
         #cv2.putText(img, str(id), (x+5,y-5), font, 1, (255,255,255), 2)
         #cv2.putText(img, str(confidence), (x+5,y+h-5), font, 1, (255,255,0), 1)
             
-    def Recognition(self, encoding):
-        while True:
-            threadLock.acquire()
-            index = self.tempKnownsCount -1
-            self.tempKnownsCount -= 1
-            threadLock.release()
-            
-            if 0 > index:
-                break
-            
-            onedata = self.dataset[index]
+    def Recognition(self, encoding, start, end):
+        for i in range(start, end):
+            onedata = self.dataset[i]
             distance0 = face_recognition.face_distance(np.array(onedata[1][0]), np.array(encoding))
             distance1 = face_recognition.face_distance(np.array(onedata[1][1]), np.array(encoding))
             distance2 = face_recognition.face_distance(np.array(onedata[1][2]), np.array(encoding))
@@ -307,29 +298,18 @@ class FaceCore(object):
         else:
             messagebox.showinfo(title = title, message = content, parent = self.parentWidget)
     
-    
-    def GetRecognitionMessage(self):
-        return self.recogmsg.eToString()
-    
-    
-    def ConsoleWrite(self, content):
-        message = content+ '\n'
-        self.console.config(state = tk.NORMAL)
-        self.console.insert( tk.END, message)
-        self.console.see(tk.END)
-        self.console.config(state = tk.DISABLED)
-      
         
     def CvPrint(self, content):
-        if None != self.console:
-            self.ConsoleWrite(content)
+        gui.WriteConsole(content)
         print(content)
         
     
     def AddNewFace(self, faceInfo, encodings):
         #Write to faceinfo file
         foption = FileOption()
-        foption.WriteFaceInfo(faceInfo)
+        retvalue = foption.WriteFaceInfo(faceInfo)
+        if retvalue < 0:
+            return retvalue
         #print(faceInfo.info)
         
         #write to encodings file
@@ -342,7 +322,8 @@ class FaceCore(object):
         
         #Synchronization variable value
         self.knownsCount += 1
-        self.tempKnownsCount = self.knownsCount
+        
+        return 0
     
     def IsIdExist(self, label): # label type is str
         if self.dataset is not None:
@@ -363,15 +344,9 @@ class FaceCore(object):
                 del self.dataset[index]
                     
                 self.knownsCount -= 1
-                self.tempKnownsCount = self.knownsCount
                 
         self.CvPrint('Deleted ' +str( len(labels) )+ ' faces success!')
                    
-    def SetParentWidget(self, parent):
-        del self.parentWidget
-        self.parentWidget = None
-        self.parentWidget = parent
-        
     
    
         
@@ -381,27 +356,6 @@ class FaceCore(object):
             if self.cam.isOpened():
                 self.cam.release()
         
-
-
-
-class Entity(object):
-    
-    def __init__(self, eId, eName, eInfo, eConfidence = None):
-        self.id = eId
-        self.name = eName
-        self.info = eInfo
-        self.confidence = eConfidence
-        
-    def eToString(self):
-        string = '\nName: ' + self.name + '\n'\
-                'Confidence: ' + str(self.confidence) + '\n'\
-                'Info: ' + self.info
-        return string
-    
-    def __del__(self):
-        print('destroy object Entity')
-
-
 
 
 class MyThread (threading.Thread):
@@ -418,6 +372,8 @@ class MyThread (threading.Thread):
             self.func(self.args[0])
         elif 2 == argNum:
             self.func(self.args[0], self.args[1])
+        elif 3 == argNum:
+            self.func(self.args[0], self.args[1], self.args[2])
             
                        
 class DetImages:

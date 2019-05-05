@@ -10,27 +10,29 @@ import dboperation as dp
 import numpy as np
 
 
-dp.DbConnect()
-dp.CreateTable()
+# =============================================================================
+# dp.DbConnect()
+# dp.CreateTable()
+# 
+# fp = dp.FileOption()
+# 
+# array = np.arange(384).reshape(3,128)
+# ttuple = ('123456', array)
+# 
+# #fp.WriteEncodings(ttuple)
+# 
+# fp.DeleteEncoding('123456')
+# 
+# fp.LoadDataset()
+# 
+# dp.DbRelease()
+# 
+# =============================================================================
 
-fp = dp.FileOption()
-
-array = np.arange(384).reshape(3,128)
-ttuple = ('123456', array)
-
-#fp.WriteEncodings(ttuple)
-
-fp.DeleteEncoding('123456')
-
-fp.LoadDataset()
-
-dp.DbRelease()
 
 
 
-
-
-for i in range(3):
+for i in range(3,6):
     print(i)
 
 

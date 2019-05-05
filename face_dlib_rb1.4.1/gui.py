@@ -11,16 +11,20 @@ from tkinter import ttk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 from core import FaceCore, MyThread
-from dboperation import FileOption
+from dboperation import FileOption, FaceInfo
+from error import Error
 
 
 threadCount = 0
+console = None
+
 
 class MainWin:
     def __init__(self):
         self.menuTextState = False
         self.facecore = FaceCore()
         self.image = None
+        self.isRuningRecognize = False
         
     def GuiShow(self):
         self.message = ''
@@ -60,10 +64,12 @@ class MainWin:
         self.videocanvas.pack(fill = tk.X)
     
         self.outtext = tk.Text( framebottom)
-        self.outtext.insert( tk.END, 'Init ...\n')
+        self.outtext.insert( tk.END, 'Ready...\n')
         self.outtext.config(state = tk.DISABLED)
         self.outtext.propagate(False)
         self.outtext.pack(expand = True, fill = tk.BOTH)
+        global console
+        console = self.outtext
         
         scroll = ttk.Scrollbar(self.outtext, cursor = 'arrow')
         scroll.pack(side = tk.RIGHT, fill = tk.Y)
@@ -81,9 +87,9 @@ class MainWin:
         
         win.bind('<Key>', self.handlerAdaptor( self.ConsoleShow, win = win))
         
-        retvalue = self.facecore.FaceInit(console = self.outtext)
+        retvalue = self.facecore.FaceInit()
         if retvalue < 0:
-             messagebox.showerror(title = 'Error', message = 'Camera not found !', parent = win)
+             messagebox.showerror(title = Error().GetError(retvalue), message = 'Initialize camera failed!', parent = win)
              win.destroy()
              return -1
         self.ShowFrame()
@@ -105,7 +111,7 @@ class MainWin:
         self.outtext.config(state = tk.DISABLED)
         
         if 'r' == key:
-            self.FaceRecognition(win)
+            MyThread(self.FaceRecognition, win).start()
         if 'm'== key:
             self.MenuShow()
         if 'Escape' == key: #Esc
@@ -150,22 +156,33 @@ class MainWin:
         
         
     def FaceRecognition(self, win):
+        if self.isRuningRecognize:
+            return
+        self.isRuningRecognize = True
         global threadCount
         threadCount += 1
-        dicResult= self.facecore.FaceRecognition()
-        if len(dicResult) <= 0:
-            messagebox.showerror(title = 'Error', message = self.facecore.errorMessage, parent = win)
+        dicResult = {} 
+        retvalue = self.facecore.FaceRecognition(dicResult)
+        if retvalue < 0:
+            messagebox.showerror(title = Error().GetError(retvalue), message = 'Recognizing failed!', parent = win)
         else:  
-            string  = 'name: ' + dicResult['name'] + '\nconfidence: ' + dicResult['distance'] 
-            messagebox.showinfo(title = 'Recognize thr result', message = string, parent = win)
+            string  = 'name: ' + dicResult['faceinfo'].name + '\nidentity: ' + dicResult['faceinfo'].identity \
+                    + '\ndistance: ' + dicResult['distance'] 
+            messagebox.showinfo(title = 'Recognize result', message = string, parent = win)
         threadCount -= 1
+        self.isRuningRecognize = False
         
     def __del__(self):
         print('destroy object MainWin')
 
 
-
-
+def WriteConsole(content):
+    if console is None:
+        return
+    console.config(state = tk.NORMAL)
+    console.insert( tk.END, content + '\n')
+    console.see(tk.END)
+    console.config(state = tk.DISABLED)
 
 
 class Verify:
@@ -180,9 +197,10 @@ class Verify:
         self.root = tk.Tk(className='Enter permission') 
         self.root.geometry('270x70')  
         self.root.wm_attributes('-topmost', 1)
+        self.root.config(bg = 'whitesmoke')
         
         self.inputstr = tk.StringVar(self.root) 
-        entry = tk.Entry(self.root, textvariable = self.inputstr, show = '*')  
+        entry = tk.Entry(self.root, textvariable = self.inputstr, show = '*', highlightcolor = 'deepskyblue')  
         entry.pack(fill = tk.X, padx = 5, pady = 5)
         entry.focus_set()
         entry.bind('<Return>', self.PermissionVerify)
@@ -205,8 +223,8 @@ class Verify:
                 self.MenuCancel()
                 self.menugui.GuiShow(tk.Toplevel(), self.facecore)
             else:
-                self.facecore.CvPrint('Permission error!')
-                messagebox.showerror(title = 'Error', message = 'Permission error!')
+                WriteConsole('Permission verify failure')
+                messagebox.showerror(title = Error().GetError(retvalue), message = 'Permission error!')
                 self.root.destroy()
         
     def MenuCancel(self):
@@ -227,6 +245,7 @@ class MenuGui:
         self.topWin = None
         self.facecore = None
         self.autoMessage = None
+        self.isTraning = False
         
     def GuiShow(self, master, facecore):
         
@@ -237,8 +256,6 @@ class MenuGui:
         self.topWin.geometry('600x500')
         self.topWin.minsize(500,400)
         self.topWin.protocol('WM_DELETE_WINDOW',    lambda:self.CallBack(self.topWin))
-        
-        self.facecore.SetParentWidget(self.topWin)
         
         frame = tk.Frame(self.topWin)
         frame.pack(fill = tk.BOTH, expand = True)
@@ -285,16 +302,20 @@ class MenuGui:
         #-------------------------- frame_left2_1 ( face list )----------------------------
         frame_left2_1_1 = tk.Frame(frame_left2_1)
         frame_left2_1_1.pack(fill = tk.BOTH, expand = True)
+        s = ttk.Style()
+        s.configure('Treeview', rowheight = 25)
         
         self.table = ttk.Treeview(frame_left2_1_1, show = 'headings', selectmode='extended')
         self.table.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
-        self.table.config(columns = ('label','name','note'))
+        self.table.config(columns = ('label','name','identity','note'))
         self.table.heading('label', text = 'label')
         self.table.column('label', width = '20')
         self.table.heading('name', text = 'name')
         self.table.column('name', width = '10')
+        self.table.heading('identity', text = 'identity')
+        self.table.column('identity', width = '20')
         self.table.heading('note', text = 'note')
-        self.table.column('note', width = '30')        
+        self.table.column('note', width = '30') 
         #self.table['show'] = 'headings'
         #self.table.column("#0", width = 0)
 
@@ -304,10 +325,21 @@ class MenuGui:
         self.table.config(yscrollcommand = scrollbar.set)
         
         
+        serch_frame = tk.Frame(frame_left2_1, bg = 'white')
+        serch_frame.pack(fill = tk.X)
+        serch_frame.config(pady = 5)
+        serchlabel = tk.Label(serch_frame, text = 'Serch: ', anchor = tk.E, bg = 'white')
+        serchlabel.pack(side = tk.LEFT)
+        vcmd = self.topWin.register(self.SerchByIdentity)
+        serchentry = tk.Entry(serch_frame, validate="key", validatecommand = (vcmd, '%P'), highlightcolor = 'deepskyblue')
+        serchentry.pack(side = tk.RIGHT, fill = tk.X, expand = True)
+        
+        
+        
         button_frame = tk.Frame(frame_left2_1, height = 40, bg = 'white', pady = 2\
                                 , highlightthickness = 1, highlightbackground = 'gray')
         #button_frame.propagate(False)
-        button_frame.pack(fill = tk.X, pady = 5)
+        button_frame.pack(fill = tk.X)
         
         button_f1 = tk.Button(button_frame, text = 'Cancel', command = self.UnSelectTable)
         button_f1.pack(side = tk.RIGHT, padx = 2)
@@ -333,18 +365,26 @@ class MenuGui:
         frame_2_2_1 = tk.Frame(frame_2_2_base, bg = 'white')
         #frame_2_2_1.propagate(False)
         frame_2_2_1.pack(fill = tk.X, pady = 10)
-        self.inputText1 = tk.Entry(frame_2_2_1)
+        self.inputText1 = tk.Entry(frame_2_2_1, highlightcolor = 'deepskyblue')
         self.inputText1.pack(side = tk.RIGHT)
         labelText1 = tk.Label(frame_2_2_1, bg = 'white', text ='Name: ', anchor = tk.E)
         labelText1.pack(side = tk.RIGHT)
         
+        frame_2_2_1 = tk.Frame(frame_2_2_base, bg = 'white')
+        #frame_2_2_1.propagate(False)
+        frame_2_2_1.pack(fill = tk.X, pady = 10)
+        self.inputText2 = tk.Entry(frame_2_2_1, highlightcolor = 'deepskyblue')
+        self.inputText2.pack(side = tk.RIGHT)
+        labelText2 = tk.Label(frame_2_2_1, bg = 'white', text ='Identity: ', anchor = tk.E)
+        labelText2.pack(side = tk.RIGHT)
+        
         frame_2_2_2 = tk.Frame(frame_2_2_base, bg = 'white')
         #frame_2_2_2.propagate(False)
         frame_2_2_2.pack(fill = tk.X, pady = 10)
-        self.inputText2 = tk.Text(frame_2_2_2, width = 20, height = 5, wrap = tk.WORD)
-        self.inputText2.pack(side = tk.RIGHT)
-        labelText1 = tk.Label(frame_2_2_2, bg = 'white', text ='Note: ', anchor = tk.NE)
-        labelText1.pack(side = tk.RIGHT, fill = tk.Y)
+        self.inputText3 = tk.Text(frame_2_2_2, width = 20, height = 5, wrap = tk.WORD, highlightcolor = 'deepskyblue')
+        self.inputText3.pack(side = tk.RIGHT)
+        labelText3 = tk.Label(frame_2_2_2, bg = 'white', text ='Note: ', anchor = tk.NE)
+        labelText3.pack(side = tk.RIGHT, fill = tk.Y)
         
         frame_2_2_base2 = tk.Frame(frame_left2_2, bg = 'white', pady = 2\
                                    ,highlightthickness = 1, highlightbackground = 'gray')
@@ -352,6 +392,10 @@ class MenuGui:
         frame_2_2_base2.pack(side = tk.BOTTOM, fill = tk.X, pady = 5)
         button_f21 = tk.Button(frame_2_2_base2, text = 'Clear', command = self.ClearFaceInput)
         button_f21.pack(side = tk.RIGHT, padx = 2)
+# =============================================================================
+# 
+#         button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = lambda:MyThread(self.CreateNewFaceTest).start() )
+# =============================================================================
         button_f22 = tk.Button(frame_2_2_base2, text = 'Train', width = 5, command = lambda:MyThread(self.CreateNewFace).start() )
         button_f22.pack(side = tk.RIGHT, padx = 2)
 # =============================================================================
@@ -373,7 +417,7 @@ class MenuGui:
         frame_2_3_1 = tk.Frame(frame_2_3_base, bg = 'white')
         #frame_2_3_1.propagate(False)
         frame_2_3_1.pack(fill = tk.X, pady = 10)
-        self.inputTextOld = tk.Entry(frame_2_3_1, show = '*')
+        self.inputTextOld = tk.Entry(frame_2_3_1, show = '*', highlightcolor = 'deepskyblue')
         self.inputTextOld.pack(side = tk.RIGHT)
         labelText1 = tk.Label(frame_2_3_1, bg = 'white', text ='old permission: ', anchor = tk.E)
         labelText1.pack(side = tk.RIGHT)
@@ -381,7 +425,7 @@ class MenuGui:
         frame_2_3_2 = tk.Frame(frame_2_3_base, bg = 'white')
         #frame_2_3_2.propagate(False)
         frame_2_3_2.pack(fill = tk.X, pady = 10)
-        self.inputTextNew = tk.Entry(frame_2_3_2, show = '*')
+        self.inputTextNew = tk.Entry(frame_2_3_2, show = '*', highlightcolor = 'deepskyblue')
         self.inputTextNew.pack(side = tk.RIGHT)
         labelText1 = tk.Label(frame_2_3_2, bg = 'white', text ='new permission: ', anchor = tk.E)
         labelText1.pack(side = tk.RIGHT)
@@ -390,7 +434,7 @@ class MenuGui:
         frame_2_3_3 = tk.Frame(frame_2_3_base, bg = 'white')
         #frame_2_3_3.propagate(False)
         frame_2_3_3.pack(fill = tk.X, pady = 10)
-        self.inputTextRepeat = tk.Entry(frame_2_3_3, show = '*')
+        self.inputTextRepeat = tk.Entry(frame_2_3_3, show = '*', highlightcolor = 'deepskyblue')
         self.inputTextRepeat.pack(side = tk.RIGHT)
         labelText1 = tk.Label(frame_2_3_3, bg = 'white', text ='repeat: ', anchor = tk.E)
         labelText1.pack(side = tk.RIGHT)
@@ -426,39 +470,71 @@ class MenuGui:
                 item.config(bg = 'white')
                 self.listFrames[i].pack_forget()
     
+    
     def CreateNewFace(self, event = None):
+        if self.isTraning:
+            return
+        self.isTraning = True
         global threadCount
         threadCount += 1
+        
         name = self.inputText1.get()
         if 0 == len(name):
             name = 'unspecified'
-        note = self.inputText2.get(0.0, tk.END)
+        
+        identity = self.inputText2.get()
+        if 0 == len(identity):
+            identity = 'unspecified'
+        
+        note = self.inputText3.get(0.0, tk.END)
         if 0 == len(note):
-            note = 'null'
-        faceInfo = self.facecore.TrainFromCamera(name, note)
-        self.RefreshTable(faceInfo)
+            note = 'unspecified'
+        note = note.replace('\n', ' ')
+
+        faceInfo  = FaceInfo('unspecified', name, identity, note)
+        messagebox.showinfo(title = 'INFO', message = 'Look the camera and wait ...', parent = self.topWin)
+        retvalue = self.facecore.TrainFromCamera(faceInfo)
+        if retvalue >= 0:
+            messagebox.showinfo(title = 'INFO', message = '1 faces trained.', parent = self.topWin)
+            self.RefreshTable(faceInfo)
+        else:
+            messagebox.showerror(title = Error().GetError(retvalue), message = 'Add new face failure!'\
+                                , parent = self.topWin)
         threadCount -= 1
+        self.isTraning = False
+    
+    def CreateNewFaceTest(self, event = None):
+        count = 2019001
+        for i in range(500):
+            count += i
+            print(count)
+            faceInfo  = FaceInfo('unspecified', 'linjie', str(count), 'test')
+            self.facecore.TrainFromCamera(faceInfo)
+            self.RefreshTable(faceInfo)
+        
         
     def ClearFaceInput(self):
         self.inputText1.delete(0, tk.END)
-        self.inputText2.delete(0.0, tk.END)
+        self.inputText2.delete(0, tk.END)
+        self.inputText3.delete(0.0, tk.END)
     
-    def RefreshTable(self, faceId = None):
-        self.fileObject = FileOption()
-        if None != faceId:
-            faceInfo = self.fileObject.GetFaceInfo(faceId)
-            self.table.insert('',tk.END, values = (faceInfo.faceId, faceInfo.name, faceInfo.info))
+    
+    def RefreshTable(self, faceInfo = None):
+        
+        if None != faceInfo:
+            self.table.insert('',tk.END, values = (faceInfo.faceId, faceInfo.name, faceInfo.identity, faceInfo.info))
         else:
             faceInfos = []
-            self.fileObject.GetFaceListInfo(faceInfos)
+            self.fileObject = FileOption()
+            self.fileObject.GetFaceAllInfo(faceInfos)
             for item in faceInfos:
-                self.table.insert('',tk.END, values = (item.faceId, item.name, item.info))
+                self.table.insert('',tk.END, values = (item.faceId, item.name, item.identity, item.info))
                 
         
     def DeleteTableItems(self, deleteAll = False):
         faceIds = []
         obids = []
-        if False == deleteAll:
+        if deleteAll is False:
             for item in self.table.selection():
                 values = self.table.item(item, 'values')
                 faceIds.append(values[0])
@@ -473,12 +549,29 @@ class MenuGui:
                 obids.append(item)
                 #self.table.delete(item)
                 #print(values[0])
+        if len(faceIds) == 0:
+            return
         retvalue = messagebox.askokcancel(title = 'Info', message = 'Whether to delete the selected '\
                                           +str( len(faceIds) )+' faces', parent = self.topWin)
         if retvalue:
             for item in obids:
                 self.table.delete(item)
             self.facecore.DeleteFaces(faceIds)
+    
+    
+    def SerchByIdentity(self, content):
+        #print(content)
+        #clear table
+        items = self.table.get_children()
+        for item in items:
+            self.table.delete(item)
+        #refill table        
+        faceInfos = FileOption().GetFaceListInfo(content)
+        if faceInfos is not None:
+            for item in faceInfos:
+                    self.table.insert('',tk.END, values = (item.faceId, item.name, item.identity, item.info))
+        
+        return True
             
             
     
@@ -494,11 +587,11 @@ class MenuGui:
             messagebox.showerror(title = 'Error', message = 'Repeat permission error', parent = self.topWin)
         else: 
             retvalue = FileOption().WritePermission(oldp, newp)
-            if 0 == retvalue:
+            if retvalue is 0:
                 messagebox.showinfo(title = 'Info', message = 'Change permission success!', parent = self.topWin)
                 self.CancelResetPermission()
-            elif -1 == retvalue:
-                messagebox.showinfo(title = 'Error', message = 'Old permission rrror', parent = self.topWin)
+            elif retvalue < 0:
+                messagebox.showerror(title = Error().GetError(retvalue), message = 'Old permission error', parent = self.topWin)
             
     
     def CancelResetPermission(self):
