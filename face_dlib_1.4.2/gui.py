@@ -162,13 +162,10 @@ class MainWin:
         global threadCount
         threadCount += 1
         dicResult = {} 
-        retvalue = self.facecore.FaceRecognition(dicResult)
-        if retvalue < 0:
-            messagebox.showerror(title = Error().GetError(retvalue), message = 'Recognizing failed!', parent = win)
-        else:  
-            string  = 'name: ' + dicResult['faceinfo'].name + '\nidentity: ' + dicResult['faceinfo'].identity \
-                    + '\ndistance: ' + dicResult['distance'] 
-            messagebox.showinfo(title = 'Recognize result', message = string, parent = win)
+        self.facecore.FaceRecognition(dicResult)
+        string  = 'name: ' + dicResult['faceinfo'].name + '\nidentity: ' + dicResult['faceinfo'].identity \
+                + '\ndistance: ' + dicResult['distance'] 
+        messagebox.showinfo(title = 'Recognize result', message = string, parent = win)
         threadCount -= 1
         self.isRuningRecognize = False
         

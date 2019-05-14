@@ -39,7 +39,7 @@ threadLock = threading.Lock()
 DevicePath0 = '/dev/video0'
 DevicePath1 = '/dev/video1'
 
-Unkown = 0.5
+Unkown = 0.4
 
 #when run in raspberry open the annotation
 #Resolve conflicts between openblas and applications
@@ -185,14 +185,16 @@ class FaceCore(object):
             #self.Message(0, 'info', string)
             self.CvPrint(string)
             return -203
-            
+        
         for i,face in enumerate(faceSamples):
             # compute the facial embedding for the face
             encoding = face_recognition.face_encodings(face, [boxes[i]])
-            knownEncodings.append(encoding)
+            knownEncodings.append(encoding[0])
+
         
         faceInfo.faceId = faceId
         retvalue = self.AddNewFace(faceInfo, knownEncodings)
+        retvalue = 0
         if retvalue < 0:
             return retvalue
         
@@ -244,51 +246,43 @@ class FaceCore(object):
             end = (i+1)*taskNum
             if (i + 1) == self.threadNum and end < self.knownsCount:
                 end = self.knownsCount
-            thread = MyThread(self.Recognition, encoding, start, end)
+            thread = MyThread(self.Recognition, encoding[0], start, end)
             thread.start()
             threads.append(thread)
         
         for th in threads:
             th.join()
             
-            
-        #print('Running time: %s Seconds'%(end-start))
-         
-        self.recogResults.sort(key = lambda k: k[0]) #sort by value
-        if len(self.recogResults) ==0:
-            string = 'Error: The recognizer return an empty list'
-            self.CvPrint(string)
-            self.errorMessage = string
-            return -205
-        #print(self.recogResults)str(face_id)
-        final = self.recogResults[0]
+        if len(self.recogResults) > 0:
+            self.recogResults.sort(key = lambda k: k[0]) #sort by value
+            final = self.recogResults[0]
         
-        label = final[1]
-        distance = final[0]
-        if distance <= Unkown:
+            label = final[1]
+            distance = final[0]
             faceInfo = FileOption().GetFaceInfo(label)
         else:
+            distance = 1.0
             faceInfo = FileOption().UnkownFaceInfo()
+            
         string2 = faceInfo.eToString() + '\nDistance: ' + str(distance)
         self.CvPrint(string2)
-        
         result.update({'faceinfo' : faceInfo, 'distance' : str(distance)}) 
         
         return 0
         
         #cv2.putText(img, str(id), (x+5,y-5), font, 1, (255,255,255), 2)
         #cv2.putText(img, str(confidence), (x+5,y+h-5), font, 1, (255,255,0), 1)
-            
+         
+        
+        
     def Recognition(self, encoding, start, end):
         for i in range(start, end):
-            onedata = self.dataset[i]
-            distance0 = face_recognition.face_distance(np.array(onedata[1][0]), np.array(encoding))
-            distance1 = face_recognition.face_distance(np.array(onedata[1][1]), np.array(encoding))
-            distance2 = face_recognition.face_distance(np.array(onedata[1][2]), np.array(encoding))
-           
-            distance = (distance0[0] + distance1[0] + distance2[0]) / samplingtimes
-            result = (distance, onedata[0])
-            self.recogResults.append(result)
+            distances = face_recognition.face_distance(self.dataset[i][1], encoding)
+            distance = (distances[0] + distances[1] + distances[2]) / samplingtimes
+            #print(self.dataset[i][0] + ' ' + str(distance))
+            if distance < Unkown:
+                result = (distance, self.dataset[i][0])
+                self.recogResults.append(result)
             #print(threading.currentThread().ident)
        
         
@@ -314,9 +308,9 @@ class FaceCore(object):
         
         #write to encodings file
         ttuple = (faceInfo.faceId, encodings)
-        FileOption().WriteEncodings(ttuple)
+        foption.WriteEncodings(ttuple)
         
-        #Add new face to memoty
+        #Add new face to menory
         datatuple = (faceInfo.faceId, encodings)
         self.dataset.append(datatuple)
         
